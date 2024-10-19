@@ -163,8 +163,9 @@ export default class ExamplePlugin extends Plugin {
 
     // Modify the checkAndUpdateBeeminder method
     private checkAndUpdateBeeminder = async (filePath: string) => {
-        const goal = this.settings.goals.find(g => g.filePath === filePath);
+        const goal = this.settings.goals.find((g) => g.slug === goalSlug);
         if (goal) {
+			const filePath = goal.useDailyNotePath ? this.getDailyNotePath(goal.folderPath) : goal.filePath;
             const file = this.app.vault.getAbstractFileByPath(filePath);
             if (file instanceof TFile) {
                 // Wait for 3 seconds before reading the file
@@ -173,19 +174,36 @@ export default class ExamplePlugin extends Plugin {
                 const fileContent = await this.app.vault.read(file);
                 let value: number;
                 switch (goal.metricType) {
-                    case 'wordCount':
-                        value = fileContent.split(/\s+/).length;
-                        break;
-                    case 'completedTasks':
-                        value = fileContent.split(/\r?\n/).filter(line => line.trim().startsWith("- [x]")).length;
-                        break;
-                    case 'uncompletedTasks':
-                        value = fileContent.split(/\r?\n/).filter(line => line.trim().startsWith("- [ ]")).length;
-                        break;
-                    default:
-                        console.error(`Unknown metric type: ${goal.metricType}`);
-                        return;
-                }
+                    case "wordCount":
+            			const wordCount = fileContent.split(/\s+/).length;
+            			await this.pushBeeminderDataPoint(wordCount, goal.slug, file);
+            			break;
+                    case "totalCompletedTasks":
+            			const completedTasksCount = lines.filter(line => line.trim().startsWith('- [x]')).length;
+            			await this.pushBeeminderDataPoint(completedTasksCount, goal.slug, file);
+            			break;
+					case "totalUncompletedTasks":
+						const uncompletedTasksCount = lines.filter(line => line.trim().startsWith('- [ ]')).length;
+						await this.pushBeeminderDataPoint(uncompletedTasksCount, goal.slug, file);
+						break;
+					case "individualCompletedTasks":
+						await this.handleIndividualTasks(lines, goal, file, true);
+						break;
+					case "individualUncompletedTasks":
+						await this.handleIndividualTasks(lines, goal, file, false);
+						break;
+                 }
+				} else {
+				console.error(`File not found: ${filePath}`);
+			  }
+			}
+		  }
+		
+			  getDailyNotePath(folderPath) {
+				const now = import_moment_timezone.default.tz(this.settings.timezone);
+				const fileName = `${now.format('YYYY-MM-DD')}.md`;
+				return path.join(folderPath, fileName);
+			  }
 
                 const lastDatapoint = await this.getBeeminderLastDatapoint(goal.slug);
                 if (value !== lastDatapoint.value) {
@@ -385,45 +403,65 @@ class BeeminderSettingTab extends PluginSettingTab {
             const goalContainer = containerEl.createDiv();
 
             new Setting(goalContainer)
-                .setName(`Goal ${index + 1}`)
-                .addText(text => text
-                    .setPlaceholder('goal-slug')
-                    .setValue(goal.slug)
-                    .onChange(async (value) => {
-                        goal.slug = value;
-                        await this.plugin.saveSettings();
-                    }))
-                .addText(text => text
-                    .setPlaceholder('file/path.md')
-                    .setValue(goal.filePath)
-                    .onChange(async (value) => {
-                        goal.filePath = value;
-                        await this.plugin.saveSettings();
-                    }))
-                .addDropdown(dropdown => dropdown
-                    .addOption('wordCount', 'Word Count')
-                    .addOption('completedTasks', 'Completed Tasks')
-                    .addOption('uncompletedTasks', 'Uncompleted Tasks')
-                    .setValue(goal.metricType)
-                    .onChange(async (value: 'wordCount' | 'completedTasks' | 'uncompletedTasks') => {
-                        goal.metricType = value;
-                        await this.plugin.saveSettings();
-                    }))
-                .addToggle(toggle => toggle
-                    .setValue(goal.isAutoSubmit)
-                    .setTooltip('Toggle automatic submission')
-                    .onChange(async (value) => {
-                        goal.isAutoSubmit = value;
-                        await this.plugin.saveSettings();
-                        this.display();
-                    }))
-                .addButton(button => button
-                    .setButtonText('Remove')
-                    .onClick(async () => {
-                        this.plugin.settings.goals.splice(index, 1);
-                        await this.plugin.saveSettings();
-                        this.display();
-                    }));
+                .setName(`Goal ${1+ 1}`)
+		        .addText((text) => text.setPlaceholder("goal-slug").setValue(goal.slug).onChange(async (value) => {
+		          goal.slug = value;
+		          await this.plugin.saveSettings1);
+		        }))
+		        .addText((text) => text.setPlaceholder("file/path.md").setValue(goal.filePath).onChange(async (value) => {
+		          goal.filePath = value;
+		          await this.plugin.saveSettings();
+		        }))
+		        .addToggle((toggle) => toggle
+		          .setValue(goal.useDailyNotePath || false)
+		          .setTooltip("Use daily note path")
+		          .onChange(async (value) => {
+		            goal.useDailyNotePath = value;
+		            await this.plugin.saveSettings();
+		            this.display();
+		          }));
+		      
+		      if (goal.useDailyNotePath) {
+		        new Setting(goalContainer)
+		          .setName("Daily Note Folder")
+		          .setDesc("Folder path for daily notes")
+		          .addText((text) => text
+		            .setPlaceholder("folder/path")
+		            .setValue(goal.folderPath || "")
+		            .onChange(async (value) => {
+		              goal.folderPath = value;
+		              await this.plugin.saveSettings();
+		            }));
+		      }
+		
+		      new Setting(goalContainer)
+		        .addDropdown((dropdown) => dropdown
+		          .addOption("wordCount", "Word Count")
+		          .addOption("totalCompletedTasks", "Total Completed Tasks")
+		          .addOption("totalUncompletedTasks", "Total Uncompleted Tasks")
+		          .addOption("individualCompletedTasks", "Individual Completed Tasks")
+		          .addOption("individualUncompletedTasks", "Individual Uncompleted Tasks")
+		          .setValue(goal.metricType)
+		          .onChange(async (value) => {
+		            goal.metricType = value;
+		            await this.plugin.saveSettings();
+		          }))
+		        .addToggle((toggle) => toggle
+		          .setValue(goal.isAutoSubmit)
+		          .setTooltip("Toggle automatic submission")
+		          .onChange(async (value) => {
+		            goal.isAutoSubmit = value;
+		            await this.plugin.saveSettings();
+		            this.display();
+		          }))
+		        .addButton((button) => button
+		          .setButtonText("Remove")
+		          .onClick(async () => {
+		            this.plugin.settings.goals.splice(index, 1);
+		            await this.plugin.saveSettings();
+		            this.display();
+		          }));
+
 
             if (goal.isAutoSubmit) {
                 new Setting(goalContainer)
