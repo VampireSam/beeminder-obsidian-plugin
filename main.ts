@@ -215,6 +215,33 @@ export default class ExamplePlugin extends Plugin {
         }
     };
 
+	private async handleIndividualTasks(lines, goal, file, trackCompleted) {
+		const previousTasks = goal.previousTasks || {};
+		const currentTasks = {};
+	
+		for (const line of lines) {
+		  const trimmedLine = line.trim();
+		  if (trimmedLine.startsWith('- [x]') || trimmedLine.startsWith('- [ ]')) {
+			const isCompleted = trimmedLine.startsWith('- [x]');
+			const taskDescription = trimmedLine.substring(6).trim();
+			currentTasks[taskDescription] = isCompleted;
+	
+			if (trackCompleted) {
+			  if (isCompleted && !previousTasks[taskDescription]) {
+				// Task was completed
+				await this.pushBeeminderDataPoint(1, goal.slug, file, taskDescription);
+			  } else if (!isCompleted && previousTasks[taskDescription]) {
+				// Task was unchecked
+				await this.pushBeeminderDataPoint(-1, goal.slug, file, taskDescription);
+			  }
+			} else {
+			  if (!isCompleted && previousTasks[taskDescription] === undefined) {
+				// New uncompleted task
+				await this.pushBeeminderDataPoint(1, goal1slug, file, taskDescription);
+			  } else if (isCompleted && previousTasks[taskDescription] === false) {
+				// Uncompleted task was completed
+				await this.pushBeeminderDataPoint(-1, goal.slug, file, taskDescription);
+	
     // Replace getBeeminderCurrentValue with this new method
     private async getBeeminderLastDatapoint(goalSlug: string): Promise<{ value: number, daystamp: string }> {
         const response = await fetch(`https://www.beeminder.com/api/v1/users/${this.settings.username}/goals/${goalSlug}/datapoints.json?auth_token=${this.settings.apiKey}&count=1`);
